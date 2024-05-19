@@ -1,57 +1,75 @@
-import React, { useRef } from 'react'
+import React, { useRef } from 'react';
 import lang from '../utils/languageConstants';
 import { useDispatch, useSelector } from 'react-redux';
-import openai from '../utils/openai';
+import { GoogleGenerativeAI } from "@google/generative-ai"; // Move this import to the top
 import { API_OPTIONS } from '../utils/constant';
 import { addGptMovieResult } from '../utils/gptSlice';
+
+const API_KEY = process.env.REACT_APP_GOOGLE_API_KEY; // Define your API key
+const genAI = new GoogleGenerativeAI(API_KEY); // Initialize genAI with the API key
+
 const GptSearchBar = () => {
-  const dispatch=useDispatch();
-const langKey=useSelector((store)=>store.config.lang);
-const searchText=useRef(null);
-//search movie in tmdb
-const searchMovieTMDB=async (movie)=>{
-  const data=await 
-  fetch('https://api.themoviedb.org/3/search/movie?query='
-  +movie+
-  '&include_adult=false&language=en-US&page=1', API_OPTIONS)
-  const json=await data.json();
-  return json.results;
-}
+  const dispatch = useDispatch();
+  const langKey = useSelector((store) => store.config.lang);
+  const searchText = useRef(null);
 
-const handleGptSearchClick=async()=>{
-// console.log(searchText.current.value);
-//make an api call to GPT API and get movie Results
-const gptQuery="Act as a Movie Recommendation system and suggest some movies for the query : "+searchText.current.value + ". only give me names of 5 movies, comma seperated like the example result given ahead. Example Result: Gadar, Sholay, Don, Golmal, Koi Mil Gaya";
+  // Search movie in TMDB
+  const searchMovieTMDB = async (movie) => {
+    const data = await fetch(
+      'https://api.themoviedb.org/3/search/movie?query=' +
+        movie +
+        '&include_adult=false&language=en-US&page=1',
+      API_OPTIONS
+    );
+    const json = await data.json();
+    return json.results;
+  };
 
-const gptResults = await openai.chat.completions.create({
-  messages: [{ role: 'user', content: gptQuery}],
-  model: 'gpt-3.5-turbo',
-});
-if(!gptResults.choices)
-{
-  // todo error handling
-}
-// console.log(gptResults.choices?.[0].message?.content);
-const gptMovies=gptResults.choices?.[0].message?.content.split(",");
-//for each movie I will search TBDB API 
-const promiseArray=gptMovies.map(movie=>searchMovieTMDB(movie))
-// promiseArray will consists of array of 5 promises i.e [p1,p2,p3,p4,p5]
+  const handleGptSearchClick = async () => {
+    const searchQuery =
+      "Act as movie recommendation system and suggest movies for the query: " +
+      searchText.current.value +
+      ". only give me names of 5 movies, comma separated like the given result ahead. Example Result: Avatar, Sholay, Bahubali, Singham, Krish";
 
-const tmtbResults=await Promise.all(promiseArray);
-// console.log(tmtbResults);
-dispatch(addGptMovieResult({movieNames:gptMovies,movieResults:tmtbResults}));
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const result = await model.generateContent(searchQuery);
+    const response = await result.response;
+    const text = await response.text();
 
-}
+    if (!text) {
+      // TODO: write error handling
+      return;
+    }
+
+    const gptMovies = text.split(", ");
+
+    // For each movie search TMDB API
+    const promiseArray = gptMovies.map((movie) => searchMovieTMDB(movie));
+    //[Promise, Promise, Promise, Promise, Promise]
+
+    const tmdbResults = await Promise.all(promiseArray);
+
+    dispatch(addGptMovieResult({ movieNames: gptMovies, movieResults: tmdbResults }));
+  };
+
   return (
     <div className='pt-[30%] md:pt-[10%] flex justify-center'>
-      <form className='w-full md:w-1/2 bg-black grid grid-cols-12 rounded-lg' onSubmit={(e)=>e.preventDefault()}>
-         <input ref={searchText} type='text' className='p-4 m-4 col-span-9' placeholder={lang[langKey].gptSearchPlaceHolder}/>
-         <button className='col-span-3 m-4 py-2 px-1 bg-red-700 text-white rounded-lg' onClick={handleGptSearchClick}>
-         {lang[langKey].search}
-         </button>
+      <form className='w-full md:w-1/2 bg-black grid grid-cols-12 rounded-lg' onSubmit={(e) => e.preventDefault()}>
+        <input
+          ref={searchText}
+          type='text'
+          className='p-4 m-4 col-span-9'
+          placeholder={lang[langKey].gptSearchPlaceHolder}
+        />
+        <button
+          className='col-span-3 m-4 py-2 px-1 bg-red-700 text-white rounded-lg'
+          onClick={handleGptSearchClick}
+        >
+          {lang[langKey].search}
+        </button>
       </form>
     </div>
-  )
-}
+  );
+};
 
 export default GptSearchBar;
